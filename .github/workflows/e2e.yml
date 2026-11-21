@@ -25,13 +25,14 @@ jobs:
       - uses: azure/setup-helm@v5
       - name: install kind
         run: |
-          curl -fsSLo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
-          chmod +x /usr/local/bin/kind
+          curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          sudo install -m 0755 kind /usr/local/bin/kind && rm kind
+          kind version
       - run: scripts/e2e.sh
       - name: diagnostics
         if: failure()
         run: |
-          export KUBECONFIG=$(terraform -chdir=terraform/envs/kind output -raw kubeconfig_path)
+          export KUBECONFIG=$(terraform -chdir=terraform/envs/kind output -raw kubeconfig_path 2>/dev/null) || { echo "no cluster was created"; exit 0; }
           kubectl get pods -A -o wide
           kubectl -n hop describe pods
           kubectl -n hop logs -l app.kubernetes.io/name=hop --tail=100 --prefix
