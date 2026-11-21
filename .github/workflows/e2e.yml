@@ -23,6 +23,12 @@ jobs:
           terraform_version: 1.17.2
           terraform_wrapper: false
       - uses: azure/setup-helm@2f5e7bc67f1f9972ab16657bb795f36d8f04de0e # v5.1.0
+      - name: kernel modules for NetworkPolicy
+        # kindnet enforces NetworkPolicy through an NFQUEUE; the runner image
+        # does not load the queue module by default.
+        run: |
+          sudo modprobe nfnetlink_queue || true
+          lsmod | grep -E 'nfnetlink_queue|nf_tables' || echo "nfnetlink_queue not loaded"
       - name: install kind
         run: |
           curl -fsSLo kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
@@ -37,3 +43,12 @@ jobs:
           kubectl -n hop describe pods
           kubectl -n hop logs -l app.kubernetes.io/name=hop --tail=100 --prefix
           kubectl get events -A --sort-by=.lastTimestamp | tail -60
+          lsmod | grep -E 'nfnetlink|nf_tables|nf_conntrack' || true
+          for p in $(kubectl -n kube-system get pods -l app=kindnet -o name); do
+            echo "== $p"; kubectl -n kube-system logs "$p" | grep -viE '^I.*(Handling node|handling current node)' | tail -30
+          done
+          probe() { kubectl -n hop run "probe-$1" --rm -i --restart=Never --image=curlimages/curl:8.17.0 -- \
+            sh -c 'for i in 1 2 3; do curl -s -m 3 -o /dev/null -w "%{http_code}\n" http://hop/healthz; done' || true; }
+          echo "== with NetworkPolicy"; probe np
+          kubectl -n hop delete networkpolicy hop || true
+          echo "== without NetworkPolicy"; probe nonp
