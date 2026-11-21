@@ -66,16 +66,6 @@ pod_result() { # name -> waits for completion, prints logs, returns the pod's ex
   [[ $phase == Succeeded ]]
 }
 
-step "wait until a new pod can reach hop through the Service"
-# On a freshly created kind cluster, kindnet's NetworkPolicy engine can hold
-# new connections to policy-selected pods for a while (about 40 s on GitHub's
-# runners). Wait for that here and report it, so the checks below measure
-# hop and not the cluster's first minute.
-started=$(date +%s)
-probe_pod net-wait "until curl -s -m 2 -o /dev/null http://hop/healthz; do sleep 1; done"
-pod_result net-wait >/dev/null || { echo "FAIL: hop unreachable through its Service after 180 s" >&2; exit 1; }
-echo "ok: reachable after $(( $(date +%s) - started )) s"
-
 step "helm test: create a link through the Service and follow it"
 helm test hop -n hop --logs
 

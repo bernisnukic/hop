@@ -3,8 +3,12 @@ apiVersion: v1
 kind: Pod
 metadata:
   name: {{ include "hop.fullname" . }}-smoke
+  # Not hop's selector labels: with them, the Service would send traffic to
+  # this pod and the NetworkPolicy would cut its egress to hop.
   labels:
-    {{- include "hop.labels" . | nindent 4 }}
+    app.kubernetes.io/name: {{ include "hop.name" . }}-smoke
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/managed-by: {{ .Release.Service }}
   annotations:
     helm.sh/hook: test
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
@@ -24,12 +28,10 @@ spec:
       args:
         - |
           base=http://{{ include "hop.fullname" . }}:{{ .Values.service.port }}
-          # A smoke test checks the app, not the network's first seconds, so a
-          # connection that stalls while pods are being replaced is retried.
-          retry="--connect-timeout 5 --max-time 10 --retry 5 --retry-all-errors --retry-delay 2"
-          code=$(curl $retry -fsS -X POST -H 'Content-Type: application/json' \
+          opts="--connect-timeout 5 --max-time 10"
+          code=$(curl $opts -fsS -X POST -H 'Content-Type: application/json' \
             -d '{"url":"https://example.com/smoke"}' "$base/api/links" | sed -E 's/.*"code":"([^"]+)".*/\1/')
           echo "created $code"
-          loc=$(curl $retry -fsS -o /dev/null -w '%{redirect_url}' "$base/$code")
+          loc=$(curl $opts -fsS -o /dev/null -w '%{redirect_url}' "$base/$code")
           test "$loc" = "https://example.com/smoke"
           echo "redirect ok"
