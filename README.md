@@ -1,5 +1,7 @@
 # hop
 
+[![ci](https://github.com/bernisnukic/hop/actions/workflows/ci.yml/badge.svg)](https://github.com/bernisnukic/hop/actions/workflows/ci.yml) [![e2e](https://github.com/bernisnukic/hop/actions/workflows/e2e.yml/badge.svg)](https://github.com/bernisnukic/hop/actions/workflows/e2e.yml)
+
 A small link shortener in Go, and everything needed to run it properly on Kubernetes: Terraform for the cluster
 and its add-ons, a Helm chart, Postgres through an operator, SLOs with burn-rate alerts, a Grafana dashboard and
 runbooks. One script stands the whole stack up on a local kind cluster and checks that it behaves as designed.

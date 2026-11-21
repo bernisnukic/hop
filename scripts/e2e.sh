@@ -57,11 +57,14 @@ spec:
 YAML
   kubectl -n hop wait --for=condition=Ready "pod/$1" --timeout=60s >/dev/null 2>&1 || true
 }
-pod_result() { # name -> waits for completion, prints logs, returns the pod's exit code
-  kubectl -n hop wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$1" --timeout=180s >/dev/null 2>&1 \
-    || kubectl -n hop wait --for=jsonpath='{.status.phase}'=Failed "pod/$1" --timeout=5s >/dev/null 2>&1 || true
+pod_result() { # name -> waits for the pod to finish, prints its logs, succeeds if it did
+  local phase=""
+  for _ in $(seq 1 180); do
+    phase=$(kubectl -n hop get "pod/$1" -o jsonpath='{.status.phase}')
+    [[ $phase == Succeeded || $phase == Failed ]] && break
+    sleep 1
+  done
   kubectl -n hop logs "pod/$1"
-  local phase; phase=$(kubectl -n hop get "pod/$1" -o jsonpath='{.status.phase}')
   kubectl -n hop delete "pod/$1" --wait=false >/dev/null
   [[ $phase == Succeeded ]]
 }
