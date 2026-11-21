@@ -12,6 +12,7 @@ set -euo pipefail
 root=$(cd "$(dirname "$0")/.." && pwd)
 env_dir=$root/terraform/envs/kind
 image=${IMAGE:-}
+network_policy=${NETWORK_POLICY:-true}
 tf() { terraform -chdir="$env_dir" "$@"; }
 step() { printf '\n== %s\n' "$*"; }
 
@@ -31,7 +32,7 @@ echo "image: $image"
 
 step "terraform apply (kind cluster, platform, hop)"
 tf init -input=false
-tf apply -auto-approve -input=false -var "image=$image"
+tf apply -auto-approve -input=false -var "image=$image" -var "network_policy=$network_policy"
 
 KUBECONFIG=$(tf output -raw kubeconfig_path)
 export KUBECONFIG
@@ -128,6 +129,7 @@ if echo "$out" | grep -vE '^ *[0-9]+ 302$' | grep -q '[0-9]'; then
 fi
 echo "ok: all 600 requests during the rollout were redirects"
 
+if [[ $network_policy == true ]]; then
 step "network policy: metrics are reachable only from the monitoring namespace"
 probe_pod np-probe "curl -sS -m 5 -o /dev/null http://hop:9090/metrics"
 if pod_result np-probe >/dev/null 2>&1; then
@@ -135,5 +137,6 @@ if pod_result np-probe >/dev/null 2>&1; then
   exit 1
 fi
 echo "ok: metrics blocked outside monitoring"
+fi
 
 step "all checks passed"

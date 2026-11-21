@@ -24,6 +24,12 @@ variable "node_image" {
   default = "kindest/node:v1.36.4"
 }
 
+variable "network_policy" {
+  description = "Install hop's NetworkPolicy (kindnet enforces it)."
+  type        = bool
+  default     = true
+}
+
 variable "image" {
   description = "Local image to load into the nodes and run."
   type        = string
@@ -75,6 +81,7 @@ module "hop" {
   image_repository  = split(":", var.image)[0]
   image_tag         = split(":", var.image)[1]
   image_pull_policy = "Never"
+  values            = { networkPolicy = { enabled = var.network_policy } }
   depends_on        = [module.platform, terraform_data.load_image]
 }
 
