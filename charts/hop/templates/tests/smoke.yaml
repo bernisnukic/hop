@@ -1,0 +1,35 @@
+# `helm test` creates a link through the Service and follows it.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "hop.fullname" . }}-smoke
+  labels:
+    {{- include "hop.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    seccompProfile: {type: RuntimeDefault}
+  containers:
+    - name: smoke
+      image: curlimages/curl:8.17.0
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities: {drop: [ALL]}
+      command: [sh, -ec]
+      args:
+        - |
+          base=http://{{ include "hop.fullname" . }}:{{ .Values.service.port }}
+          # A smoke test checks the app, not the network's first seconds, so a
+          # connection that stalls while pods are being replaced is retried.
+          retry="--connect-timeout 5 --max-time 10 --retry 5 --retry-all-errors --retry-delay 2"
+          code=$(curl $retry -fsS -X POST -H 'Content-Type: application/json' \
+            -d '{"url":"https://example.com/smoke"}' "$base/api/links" | sed -E 's/.*"code":"([^"]+)".*/\1/')
+          echo "created $code"
+          loc=$(curl $retry -fsS -o /dev/null -w '%{redirect_url}' "$base/$code")
+          test "$loc" = "https://example.com/smoke"
+          echo "redirect ok"

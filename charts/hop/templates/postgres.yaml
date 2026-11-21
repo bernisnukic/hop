@@ -1,0 +1,21 @@
+{{- if .Values.postgres.cnpg.enabled }}
+# A CloudNativePG cluster. The operator creates the database, the "app" user
+# and the Secret <name>-app whose "uri" key hop reads as DATABASE_URL.
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: {{ include "hop.dbCluster" . }}
+  labels:
+    {{- include "hop.labels" . | nindent 4 }}
+spec:
+  instances: {{ .Values.postgres.cnpg.instances }}
+  storage:
+    size: {{ .Values.postgres.cnpg.storageSize }}
+    {{- with .Values.postgres.cnpg.storageClass }}
+    storageClass: {{ . }}
+    {{- end }}
+  bootstrap:
+    initdb:
+      database: app
+      owner: app
+{{- end }}

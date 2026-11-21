@@ -1,0 +1,80 @@
+# Default values for hop.
+
+replicaCount: 2
+
+image:
+  repository: ghcr.io/bernisnukic/hop
+  # Defaults to the chart's appVersion.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+# Public base URL, used to build the short links the API returns.
+baseURL: http://localhost:8080
+
+# Seconds the pod keeps serving after SIGTERM while /readyz reports
+# "draining", so it leaves the Service before it stops accepting connections.
+drainDelaySeconds: 5
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 32Mi
+  limits:
+    memory: 128Mi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 6
+  targetCPUUtilizationPercentage: 70
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: hop.example.com
+  tls: []
+
+# The database. With cnpg.enabled the chart creates a CloudNativePG cluster
+# (the operator must already be installed); otherwise point existingSecret at
+# a Secret holding a postgres:// URL.
+postgres:
+  cnpg:
+    enabled: true
+    instances: 1
+    storageSize: 1Gi
+    storageClass: ""
+  existingSecret: ""
+  existingSecretKey: uri
+
+# Needs the Prometheus Operator CRDs (kube-prometheus-stack installs them).
+monitoring:
+  enabled: true
+  scrapeInterval: 15s
+  # Extra labels for the ServiceMonitor and PrometheusRule, if your
+  # Prometheus selects on them (kube-prometheus-stack's default is release=<name>).
+  labels: {}
+  # Ship the Grafana dashboard as a ConfigMap for Grafana's sidecar.
+  dashboard: true
+
+networkPolicy:
+  enabled: true
+  # Namespace allowed to scrape /metrics.
+  metricsNamespace: monitoring
+
+serviceAccount:
+  create: true
+  name: ""
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}

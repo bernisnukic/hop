@@ -1,0 +1,193 @@
+# hop's SLOs, as Prometheus rules. This file is the single source: the Helm
+# chart wraps it in a PrometheusRule, and slo/tests.yaml unit-tests it with
+# promtool. See docs/slos.md for the reasoning behind the numbers.
+#
+#   Availability: 99.5% of requests (health checks excluded) are not 5xx.
+#                 Error budget 0.5% over 30 days.
+#   Latency:      99% of redirects are served in under 100 ms.
+#                 Error budget 1% over 30 days.
+#
+# The error numerators fall back to vector(0): with no 5xx at all, sum()
+# over zero series is empty, and the ratio would be "no data" instead of 0.
+#
+# Alerts use multiwindow, multi-burn-rate conditions: a long window shows the
+# budget is really burning, a short window (1/12 of it) shows it still is,
+# so the alert clears soon after the problem does.
+groups:
+  - name: hop-slo-availability
+    interval: 30s
+    rules:
+      - record: slo:hop_availability_errors:ratio_rate5m
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[5m]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[5m]))
+      - record: slo:hop_availability_errors:ratio_rate30m
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[30m]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[30m]))
+      - record: slo:hop_availability_errors:ratio_rate1h
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[1h]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[1h]))
+      - record: slo:hop_availability_errors:ratio_rate2h
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[2h]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[2h]))
+      - record: slo:hop_availability_errors:ratio_rate6h
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[6h]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[6h]))
+      - record: slo:hop_availability_errors:ratio_rate1d
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[1d]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[1d]))
+      - record: slo:hop_availability_errors:ratio_rate3d
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[3d]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[3d]))
+      - record: slo:hop_availability_errors:ratio_rate30d
+        expr: |
+          (
+            sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)", code=~"5.."}[30d]))
+            or vector(0)
+          )
+          / sum(rate(hop_http_requests_total{job="hop", route!~"GET /(healthz|readyz)"}[30d]))
+      - record: slo:hop_availability:error_budget_remaining
+        expr: 1 - slo:hop_availability_errors:ratio_rate30d / 0.005
+
+      - alert: HopErrorBudgetBurn
+        expr: |
+          slo:hop_availability_errors:ratio_rate1h > (14.4 * 0.005)
+          and slo:hop_availability_errors:ratio_rate5m > (14.4 * 0.005)
+        for: 2m
+        labels: {severity: page, slo: availability, long_window: 1h}
+        annotations:
+          summary: hop is failing requests fast enough to spend 2% of the monthly error budget in an hour.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+      - alert: HopErrorBudgetBurn
+        expr: |
+          slo:hop_availability_errors:ratio_rate6h > (6 * 0.005)
+          and slo:hop_availability_errors:ratio_rate30m > (6 * 0.005)
+        for: 15m
+        labels: {severity: page, slo: availability, long_window: 6h}
+        annotations:
+          summary: hop is failing requests fast enough to spend 5% of the monthly error budget in six hours.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+      - alert: HopErrorBudgetBurn
+        expr: |
+          slo:hop_availability_errors:ratio_rate1d > (3 * 0.005)
+          and slo:hop_availability_errors:ratio_rate2h > (3 * 0.005)
+        for: 1h
+        labels: {severity: ticket, slo: availability, long_window: 1d}
+        annotations:
+          summary: hop is failing requests fast enough to spend 10% of the monthly error budget in a day.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+      - alert: HopErrorBudgetBurn
+        expr: |
+          slo:hop_availability_errors:ratio_rate3d > 0.005
+          and slo:hop_availability_errors:ratio_rate6h > 0.005
+        for: 3h
+        labels: {severity: ticket, slo: availability, long_window: 3d}
+        annotations:
+          summary: hop is failing requests fast enough to use the whole monthly error budget.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+
+  - name: hop-slo-latency
+    interval: 30s
+    rules:
+      - record: slo:hop_latency_errors:ratio_rate5m
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[5m]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[5m]))
+      - record: slo:hop_latency_errors:ratio_rate30m
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[30m]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[30m]))
+      - record: slo:hop_latency_errors:ratio_rate1h
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[1h]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[1h]))
+      - record: slo:hop_latency_errors:ratio_rate2h
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[2h]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[2h]))
+      - record: slo:hop_latency_errors:ratio_rate6h
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[6h]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[6h]))
+      - record: slo:hop_latency_errors:ratio_rate1d
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[1d]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[1d]))
+      - record: slo:hop_latency_errors:ratio_rate3d
+        expr: |
+          1 - sum(rate(hop_http_request_duration_seconds_bucket{job="hop", route="GET /{code}", le="0.1"}[3d]))
+            / sum(rate(hop_http_request_duration_seconds_count{job="hop", route="GET /{code}"}[3d]))
+
+      - alert: HopLatencyBudgetBurn
+        expr: |
+          slo:hop_latency_errors:ratio_rate1h > (14.4 * 0.01)
+          and slo:hop_latency_errors:ratio_rate5m > (14.4 * 0.01)
+        for: 2m
+        labels: {severity: page, slo: latency, long_window: 1h}
+        annotations:
+          summary: Too many hop redirects are slower than 100 ms; 2% of the monthly latency budget goes in an hour.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+      - alert: HopLatencyBudgetBurn
+        expr: |
+          slo:hop_latency_errors:ratio_rate6h > (6 * 0.01)
+          and slo:hop_latency_errors:ratio_rate30m > (6 * 0.01)
+        for: 15m
+        labels: {severity: page, slo: latency, long_window: 6h}
+        annotations:
+          summary: Too many hop redirects are slower than 100 ms; 5% of the monthly latency budget goes in six hours.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+      - alert: HopLatencyBudgetBurn
+        expr: |
+          slo:hop_latency_errors:ratio_rate1d > (3 * 0.01)
+          and slo:hop_latency_errors:ratio_rate2h > (3 * 0.01)
+        for: 1h
+        labels: {severity: ticket, slo: latency, long_window: 1d}
+        annotations:
+          summary: Too many hop redirects are slower than 100 ms; 10% of the monthly latency budget goes in a day.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+      - alert: HopLatencyBudgetBurn
+        expr: |
+          slo:hop_latency_errors:ratio_rate3d > 0.01
+          and slo:hop_latency_errors:ratio_rate6h > 0.01
+        for: 3h
+        labels: {severity: ticket, slo: latency, long_window: 3d}
+        annotations:
+          summary: hop redirects are slow often enough to use the whole monthly latency budget.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+
+  - name: hop-health
+    rules:
+      - alert: HopDown
+        expr: absent(up{job="hop"} == 1)
+        for: 5m
+        labels: {severity: page}
+        annotations:
+          summary: Prometheus has not been able to scrape any hop pod for 5 minutes.
+          runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopDown.md

@@ -1,0 +1,144 @@
+# promtool unit tests for charts/hop/files/slo-rules.yaml.
+# Run: promtool test rules slo/tests.yaml
+rule_files:
+  - ../charts/hop/files/slo-rules.yaml
+evaluation_interval: 30s
+
+tests:
+  - name: 10% of requests failing pages within minutes, then opens a ticket after an hour
+    interval: 1m
+    input_series:
+      - series: 'hop_http_requests_total{job="hop",route="GET /{code}",code="302"}'
+        values: '0+900x300'
+      - series: 'hop_http_requests_total{job="hop",route="GET /{code}",code="500"}'
+        values: '0+100x300'
+      # Health checks are excluded from the SLO, so these must not dilute the error ratio.
+      - series: 'hop_http_requests_total{job="hop",route="GET /healthz",code="200"}'
+        values: '0+5000x300'
+      - series: 'up{job="hop"}'
+        values: '1x300'
+    promql_expr_test:
+      - expr: round(slo:hop_availability_errors:ratio_rate5m, 0.0001)
+        eval_time: 10m
+        exp_samples:
+          - labels: '{}'
+            value: 0.1
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: HopErrorBudgetBurn
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: HopErrorBudgetBurn
+        exp_alerts:
+          - exp_labels: {severity: page, slo: availability, long_window: 1h}
+            exp_annotations:
+              summary: hop is failing requests fast enough to spend 2% of the monthly error budget in an hour.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+          - exp_labels: {severity: page, slo: availability, long_window: 6h}
+            exp_annotations:
+              summary: hop is failing requests fast enough to spend 5% of the monthly error budget in six hours.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+      - eval_time: 75m
+        alertname: HopErrorBudgetBurn
+        exp_alerts:
+          - exp_labels: {severity: page, slo: availability, long_window: 1h}
+            exp_annotations:
+              summary: hop is failing requests fast enough to spend 2% of the monthly error budget in an hour.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+          - exp_labels: {severity: page, slo: availability, long_window: 6h}
+            exp_annotations:
+              summary: hop is failing requests fast enough to spend 5% of the monthly error budget in six hours.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+          - exp_labels: {severity: ticket, slo: availability, long_window: 1d}
+            exp_annotations:
+              summary: hop is failing requests fast enough to spend 10% of the monthly error budget in a day.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopErrorBudgetBurn.md
+      - eval_time: 30m
+        alertname: HopDown
+        exp_alerts: []
+
+  - name: no 5xx series at all still gives an error ratio of 0, not no data
+    interval: 1m
+    input_series:
+      - series: 'hop_http_requests_total{job="hop",route="GET /{code}",code="302"}'
+        values: '0+100x30'
+    promql_expr_test:
+      - expr: slo:hop_availability_errors:ratio_rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: slo:hop_availability_errors:ratio_rate5m
+            value: 0
+
+  - name: 0.1% of requests failing stays inside the budget, so nothing fires
+    interval: 1m
+    input_series:
+      - series: 'hop_http_requests_total{job="hop",route="GET /{code}",code="302"}'
+        values: '0+999x300'
+      - series: 'hop_http_requests_total{job="hop",route="GET /{code}",code="500"}'
+        values: '0+1x300'
+      - series: 'up{job="hop"}'
+        values: '1x300'
+    alert_rule_test:
+      - eval_time: 4h
+        alertname: HopErrorBudgetBurn
+        exp_alerts: []
+
+  - name: 20% of redirects slower than 100 ms pages
+    interval: 1m
+    input_series:
+      - series: 'hop_http_request_duration_seconds_bucket{job="hop",route="GET /{code}",le="0.1"}'
+        values: '0+800x300'
+      - series: 'hop_http_request_duration_seconds_count{job="hop",route="GET /{code}"}'
+        values: '0+1000x300'
+      - series: 'up{job="hop"}'
+        values: '1x300'
+    alert_rule_test:
+      - eval_time: 30m
+        alertname: HopLatencyBudgetBurn
+        exp_alerts:
+          - exp_labels: {severity: page, slo: latency, long_window: 1h}
+            exp_annotations:
+              summary: Too many hop redirects are slower than 100 ms; 2% of the monthly latency budget goes in an hour.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+          - exp_labels: {severity: page, slo: latency, long_window: 6h}
+            exp_annotations:
+              summary: Too many hop redirects are slower than 100 ms; 5% of the monthly latency budget goes in six hours.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+
+  - name: 2% of redirects slower than 100 ms never pages, and opens a ticket after three hours
+    interval: 5m
+    input_series:
+      - series: 'hop_http_request_duration_seconds_bucket{job="hop",route="GET /{code}",le="0.1"}'
+        values: '0+980x600'
+      - series: 'hop_http_request_duration_seconds_count{job="hop",route="GET /{code}"}'
+        values: '0+1000x600'
+      - series: 'up{job="hop"}'
+        values: '1x600'
+    alert_rule_test:
+      - eval_time: 2h
+        alertname: HopLatencyBudgetBurn
+        exp_alerts: []
+      - eval_time: 4h
+        alertname: HopLatencyBudgetBurn
+        exp_alerts:
+          - exp_labels: {severity: ticket, slo: latency, long_window: 3d}
+            exp_annotations:
+              summary: hop redirects are slow often enough to use the whole monthly latency budget.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopLatencyBudgetBurn.md
+
+  - name: no scrapeable hop pod pages after 5 minutes
+    interval: 1m
+    input_series:
+      - series: 'up{job="hop"}'
+        values: '0x20'
+    alert_rule_test:
+      - eval_time: 3m
+        alertname: HopDown
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: HopDown
+        exp_alerts:
+          - exp_labels: {severity: page}
+            exp_annotations:
+              summary: Prometheus has not been able to scrape any hop pod for 5 minutes.
+              runbook_url: https://github.com/bernisnukic/hop/blob/main/docs/runbooks/HopDown.md

@@ -1,0 +1,12 @@
+.git
+.github
+.terraform
+*.tfstate*
+charts
+terraform
+docs
+scripts
+slo
+*.md
+Makefile
+LICENSE

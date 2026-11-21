@@ -1,0 +1,8 @@
+hop is installed as {{ include "hop.fullname" . }}.
+
+Try it:
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "hop.fullname" . }} 8080:{{ .Values.service.port }}
+  curl -s -X POST localhost:8080/api/links -d '{"url":"https://example.com"}'
+
+Run the smoke test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

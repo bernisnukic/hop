@@ -1,0 +1,16 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "hop.fullname" . }}-slo
+  labels:
+    {{- include "hop.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  {{- /* files/slo-rules.yaml is also what slo/tests.yaml unit-tests. */}}
+  {{- $rules := .Files.Get "files/slo-rules.yaml" | fromYaml }}
+  groups:
+    {{- toYaml $rules.groups | nindent 4 }}
+{{- end }}

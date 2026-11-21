@@ -1,0 +1,38 @@
+name: e2e
+
+# Stands the whole stack up on kind with Terraform and runs scripts/e2e.sh:
+# the helm test, Prometheus scraping and SLO rules, a rolling restart under
+# load, and the network policy.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kind:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.17.2
+          terraform_wrapper: false
+      - uses: azure/setup-helm@v5
+      - name: install kind
+        run: |
+          curl -fsSLo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.33.0/kind-linux-amd64
+          chmod +x /usr/local/bin/kind
+      - run: scripts/e2e.sh
+      - name: diagnostics
+        if: failure()
+        run: |
+          export KUBECONFIG=$(terraform -chdir=terraform/envs/kind output -raw kubeconfig_path)
+          kubectl get pods -A -o wide
+          kubectl -n hop describe pods
+          kubectl -n hop logs -l app.kubernetes.io/name=hop --tail=100 --prefix
+          kubectl get events -A --sort-by=.lastTimestamp | tail -60

@@ -1,0 +1,20 @@
+{{- if .Values.monitoring.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "hop.fullname" . }}
+  labels:
+    {{- include "hop.labels" . | nindent 4 }}
+    {{- with .Values.monitoring.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  # job="hop" whatever the release is called, so the SLO rules match.
+  jobLabel: app.kubernetes.io/name
+  selector:
+    matchLabels:
+      {{- include "hop.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: metrics
+      interval: {{ .Values.monitoring.scrapeInterval }}
+{{- end }}
