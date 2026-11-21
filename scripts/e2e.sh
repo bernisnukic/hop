@@ -38,6 +38,44 @@ KUBECONFIG=$(tf output -raw kubeconfig_path)
 export KUBECONFIG
 kubectl get nodes -o wide
 
+probe_pod() { # name, shell command
+  kubectl -n hop apply -f - >/dev/null <<YAML
+apiVersion: v1
+kind: Pod
+metadata: {name: $1}
+spec:
+  restartPolicy: Never
+  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
+  containers:
+    - name: probe
+      image: curlimages/curl:8.17.0
+      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
+      command: [sh, -c]
+      args:
+        - |
+          $2
+YAML
+  kubectl -n hop wait --for=condition=Ready "pod/$1" --timeout=60s >/dev/null 2>&1 || true
+}
+pod_result() { # name -> waits for completion, prints logs, returns the pod's exit code
+  kubectl -n hop wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$1" --timeout=180s >/dev/null 2>&1 \
+    || kubectl -n hop wait --for=jsonpath='{.status.phase}'=Failed "pod/$1" --timeout=5s >/dev/null 2>&1 || true
+  kubectl -n hop logs "pod/$1"
+  local phase; phase=$(kubectl -n hop get "pod/$1" -o jsonpath='{.status.phase}')
+  kubectl -n hop delete "pod/$1" --wait=false >/dev/null
+  [[ $phase == Succeeded ]]
+}
+
+step "wait until a new pod can reach hop through the Service"
+# On a freshly created kind cluster, kindnet's NetworkPolicy engine can hold
+# new connections to policy-selected pods for a while (about 40 s on GitHub's
+# runners). Wait for that here and report it, so the checks below measure
+# hop and not the cluster's first minute.
+started=$(date +%s)
+probe_pod net-wait "until curl -s -m 2 -o /dev/null http://hop/healthz; do sleep 1; done"
+pod_result net-wait >/dev/null || { echo "FAIL: hop unreachable through its Service after 180 s" >&2; exit 1; }
+echo "ok: reachable after $(( $(date +%s) - started )) s"
+
 step "helm test: create a link through the Service and follow it"
 helm test hop -n hop --logs
 
@@ -90,33 +128,6 @@ echo "ok: no hop alerts firing"
 step "rolling restart under load loses no requests"
 # Runs inside the cluster: a port-forward is pinned to one pod and breaks
 # when that pod is replaced, so it cannot measure a rollout.
-probe_pod() { # name, shell command
-  kubectl -n hop apply -f - >/dev/null <<YAML
-apiVersion: v1
-kind: Pod
-metadata: {name: $1}
-spec:
-  restartPolicy: Never
-  securityContext: {runAsNonRoot: true, runAsUser: 65532, seccompProfile: {type: RuntimeDefault}}
-  containers:
-    - name: probe
-      image: curlimages/curl:8.17.0
-      securityContext: {allowPrivilegeEscalation: false, capabilities: {drop: [ALL]}}
-      command: [sh, -c]
-      args:
-        - |
-          $2
-YAML
-  kubectl -n hop wait --for=condition=Ready "pod/$1" --timeout=60s >/dev/null 2>&1 || true
-}
-pod_result() { # name -> waits for completion, prints logs, returns the pod's exit code
-  kubectl -n hop wait --for=jsonpath='{.status.phase}'=Succeeded "pod/$1" --timeout=180s >/dev/null 2>&1 \
-    || kubectl -n hop wait --for=jsonpath='{.status.phase}'=Failed "pod/$1" --timeout=5s >/dev/null 2>&1 || true
-  kubectl -n hop logs "pod/$1"
-  local phase; phase=$(kubectl -n hop get "pod/$1" -o jsonpath='{.status.phase}')
-  kubectl -n hop delete "pod/$1" --wait=false >/dev/null
-  [[ $phase == Succeeded ]]
-}
 
 probe_pod rollout-probe "for i in \$(seq 1 600); do curl -s -o /dev/null -w '%{http_code}\\n' http://hop/$code; sleep 0.05; done | sort | uniq -c"
 kubectl -n hop rollout restart deploy/hop
